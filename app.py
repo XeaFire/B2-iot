@@ -5,6 +5,11 @@ import time
 import os
 import threading
 import subprocess
+import queue
+from bot import run_bot
+from Utils.Notifier import notification_queue
+from Utils.ImageManager import save_temp_image
+from config import DEV_MODE
 
 # Import pour YOLOv8
 try:
@@ -16,6 +21,10 @@ except ImportError:
     print("ERREUR: Ultralytics (YOLOv8) n'est pas installé. Veuillez l'installer avec 'pip install ultralytics'")
 
 app = Flask(__name__)
+
+# --- Variables Globales Partagées et Verrous ---
+last_processed_frame = None
+processed_frame_lock = threading.Lock()
 
 # Classe singleton pour gérer la caméra
 class CameraManager:
@@ -131,77 +140,129 @@ if YOLOV8_AVAILABLE:
 else:
     print("YOLOv8 n'est pas disponible - la détection ne fonctionnera pas")
 
-# Cache pour stocker la dernière détection
-last_detection = {
-    'frame': None,
-    'time': 0
-}
+# Variables pour la logique de notification
+CONSECUTIVE_DETECTION_THRESHOLD = 7
+HUMAN_CONFIDENCE_THRESHOLD = 0.70
+NOTIFICATION_COOLDOWN = 60 # Modifié: 10 -> 60 secondes
+
+consecutive_human_detections = 0
+last_notification_time = 0
 
 def detect_with_yolov8(frame):
-    global last_detection, yolo_model
+    # Cette fonction effectue la détection et la logique de notification.
+    # Elle renvoie TOUJOURS la frame annotée pour les notifications Discord.
+    # Le choix d'afficher ou non les annotations sur le web est fait dans detection_worker.
+    global yolo_model
+    global consecutive_human_detections, last_notification_time
     current_time = time.time()
 
-    # Si YOLOv8 n'est pas disponible, renvoyer la frame sans traitement
     if yolo_model is None:
-        # Ajouter un texte explicatif
         cv2.putText(frame, "YOLOv8 non disponible", (10, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
         return frame
 
-    # Vérifier si on doit réutiliser la dernière détection
-    if current_time - last_detection['time'] < detection_interval and last_detection['frame'] is not None:
-        return last_detection['frame'].copy()
-    
-    # Faire une nouvelle détection
     if frame is None or frame.size == 0:
         print("Frame invalide passée à detect_with_yolov8")
-        return np.zeros((480, 640, 3), dtype=np.uint8)
+        # Renvoyer une frame noire pourrait être mieux qu'un tableau vide
+        return np.zeros((480, 640, 3), dtype=np.uint8) 
 
-    # Créer une copie de la frame pour le traitement
     processed_frame = frame.copy()
+    annotated_frame = processed_frame
+    detection_successful = False # Flag pour savoir si la détection a fonctionné
     
     try:
-        # Mesurer le temps de détection
         start_time = time.time()
+        results = yolo_model(processed_frame, conf=HUMAN_CONFIDENCE_THRESHOLD, classes=[0])
+        detection_successful = True # La détection a été exécutée
         
-        # Effectuer la détection avec YOLOv8
-        results = yolo_model(processed_frame, conf=0.3, classes=[0])  # Classe 0 = personne
-        
-        # Traiter les résultats
-        if results and len(results) > 0:
-            # Dessiner les résultats sur la frame
+        human_detected_in_frame = False
+        if results and len(results) > 0 and len(results[0].boxes) > 0:
+            human_detected_in_frame = True
             annotated_frame = results[0].plot()
-            
-            # Ajouter l'information de FPS
-            detection_time = time.time() - start_time
-            fps_text = f"Detection: {1/detection_time:.1f} FPS"
-            cv2.putText(annotated_frame, fps_text, (10, 30), 
-                      cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            
-            # Mettre à jour le cache
-            last_detection['frame'] = annotated_frame
-            last_detection['time'] = current_time
-            
-            return annotated_frame
+        
+        # --- Logique de notification --- 
+        if human_detected_in_frame:
+            consecutive_human_detections += 1
         else:
-            # Si pas de détection, ajouter juste l'info FPS
+            if consecutive_human_detections > 0:
+                consecutive_human_detections = 0
+
+        if consecutive_human_detections >= CONSECUTIVE_DETECTION_THRESHOLD:
+            if current_time - last_notification_time >= NOTIFICATION_COOLDOWN:
+                print(f"Conditions de notification remplies ({consecutive_human_detections} détections)! Préparation de la notification.")
+                
+                # Sauvegarder l'image annotée *avant* d'envoyer à la queue
+                image_path = save_temp_image(annotated_frame, filename_prefix="human_detected")
+                
+                if image_path:
+                    try:
+                        # Mettre un tuple (message, chemin_image) dans la queue
+                        notification_data = ("Alerte : Humain détecté sur la caméra !", image_path)
+                        notification_queue.put_nowait(notification_data)
+                        print(f"Notification (avec image {os.path.basename(image_path)}) mise en file d'attente.")
+                        last_notification_time = current_time 
+                    except queue.Full:
+                        print("AVERTISSEMENT: La file d'attente de notification est pleine.")
+                        # Optionnel: Supprimer l'image si la queue est pleine ?
+                        # if os.path.exists(image_path): os.remove(image_path)
+                else:
+                    print("Erreur: Impossible de sauvegarder l'image pour la notification.")
+                    # Envoyer quand même une notif texte ?
+                    # try:
+                    #    notification_queue.put_nowait(("Alerte: Humain détecté (erreur sauvegarde image)!", None))
+                    #    last_notification_time = current_time
+                    # except queue.Full:
+                    #    print("AVERTISSEMENT: La file d'attente de notification est pleine.")
+
+        # --- Fin de la logique de notification ---
+
+        # Ajouter l'information de FPS (même si la détection a échoué, on veut savoir)
+        if detection_successful:
             detection_time = time.time() - start_time
-            fps_text = f"Detection: {1/detection_time:.1f} FPS"
-            cv2.putText(processed_frame, fps_text, (10, 30), 
-                      cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            
-            # Mettre à jour le cache
-            last_detection['frame'] = processed_frame
-            last_detection['time'] = current_time
-            
-            return processed_frame
+            fps = (1 / detection_time) if detection_time > 0 else 0 
+            fps_text = f"Detection: {fps:.1f} FPS"
+            cv2.putText(annotated_frame, fps_text, (10, 30), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        
+        return annotated_frame
             
     except Exception as e:
         print(f"Erreur lors de la détection YOLOv8: {e}")
-        # Ajouter un message d'erreur
-        cv2.putText(processed_frame, f"Erreur: {str(e)}", (10, 50), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        # Essayer d'ajouter l'erreur sur la frame originale
+        try:
+            cv2.putText(processed_frame, f"Erreur YOLO: {str(e)[:30]}...", (10, 50), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+        except Exception as overlay_error:
+            print(f"Erreur lors de l'ajout du texte d'erreur sur l'image: {overlay_error}")
         return processed_frame
+
+# --- Thread de Détection en Arrière-plan ---
+def detection_worker():
+    global last_processed_frame
+    print(f"Thread de détection démarré. DEV_MODE: {DEV_MODE}") # Log du mode
+    camera_manager = CameraManager.get_instance()
+    
+    while True:
+        ret, frame = camera_manager.get_frame()
+        
+        if not ret or frame is None:
+            time.sleep(0.5)
+            continue
+            
+        # 2. Exécuter la détection et obtenir la frame potentiellement annotée
+        #    Cette frame annotée sera utilisée pour les notifications Discord.
+        annotated = detect_with_yolov8(frame.copy()) # Travailler sur une copie pour ne pas modifier l'original si DEV_MODE=False
+        
+        # 3. Mettre à jour la dernière frame traitée pour le flux vidéo web
+        with processed_frame_lock:
+            if DEV_MODE:
+                # En mode DEV, montrer la frame avec les annotations
+                last_processed_frame = annotated.copy()
+            else:
+                # Hors mode DEV, montrer la frame originale sans annotations
+                last_processed_frame = frame.copy() 
+            
+        time.sleep(0.05)
 
 # Afficher les caméras disponibles (Windows seulement)
 try:
@@ -236,28 +297,34 @@ def gen_raw_frames():
 
 # Fonction pour générer le flux vidéo avec détection
 def gen_processed_frames():
-    # Obtenir l'instance de la caméra
-    camera_manager = CameraManager.get_instance()
-    
+    # Lit la dernière frame traitée par le worker thread
+    global last_processed_frame
+    print("Client connecté au flux traité.")
     while True:
-        ret, frame = camera_manager.get_frame()
+        frame_to_send = None
+        with processed_frame_lock:
+            if last_processed_frame is not None:
+                frame_to_send = last_processed_frame.copy()
+            else:
+                # Afficher une image d'attente si aucune frame n'a encore été traitée
+                blank = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(blank, "Attente de la premiere frame...", (50, 240), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                frame_to_send = blank
+                
+        if frame_to_send is not None:
+            ret, buffer = cv2.imencode('.jpg', frame_to_send, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            frame_bytes = buffer.tobytes()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
         
-        if ret:
-            # Appliquer la détection YOLOv8
-            frame = detect_with_yolov8(frame)
-        
-        # Encoder et renvoyer la frame avec qualité réduite pour la performance
-        ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        frame_bytes = buffer.tobytes()
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        
-        time.sleep(0.02)  # 50 FPS pour la fluidité
+        # Contrôler le débit du flux envoyé au client
+        time.sleep(0.04) # ~25 FPS pour le flux
 
 @app.route('/')
 def index():
-    # Page simple pour afficher le flux brut
-    return render_template('raw.html')
+    # Affiche la nouvelle page principale moderne
+    return render_template('index.html')
 
 @app.route('/raw_feed')
 def raw_feed():
@@ -271,12 +338,43 @@ def processed():
 def video_feed():
     return Response(gen_processed_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+# Nouvelle route pour le contrôle de la porte
+@app.route('/control/door', methods=['POST'])
+def control_door():
+    # Placeholder: Ici, vous ajouteriez la logique pour envoyer le signal
+    # Par exemple: contrôler un GPIO, appeler une API, etc.
+    print("SIGNAL: Le bouton Ouvrir/Fermer Porte a été pressé !")
+    # Renvoyer une réponse simple pour indiquer le succès
+    return {"status": "success", "message": "Signal porte envoyé (placeholder)"}, 200
+
 if __name__ == '__main__':
-    print("Lancement du serveur Flask...")
+    print("Initialisation de l'application...")
+    
+    # Initialiser CameraManager (démarre son thread de capture)
+    camera_manager = CameraManager.get_instance()
+    
+    # Démarrer le bot Discord dans un thread séparé
+    print("Démarrage du bot Discord dans un thread...")
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    # Démarrer le worker de détection dans un thread séparé
+    print("Démarrage du worker de détection dans un thread...")
+    detection_thread = threading.Thread(target=detection_worker, daemon=True)
+    detection_thread.start()
+    
+    # Laisser un peu de temps aux threads pour démarrer
+    time.sleep(5) 
+    
+    print("Démarrage du serveur Flask...")
     try:
-        app.run(debug=True, host='0.0.0.0')
+        # Lancer Flask (bloquant jusqu'à l'arrêt)
+        # Note: debug=True recharge le code mais peut causer des problèmes avec les threads
+        # Il est préférable de le désactiver (False) pour un fonctionnement stable.
+        app.run(debug=False, host='0.0.0.0', port=5000, use_reloader=False)
     finally:
-        # Libérer la caméra à la fermeture
-        camera_manager = CameraManager.get_instance()
+        # Libérer la caméra à la fermeture (si Flask s'arrête proprement)
+        print("Arrêt de Flask, libération des ressources...")
         camera_manager.release()
-        print("Application terminée, ressources libérées")
+        print("Application terminée.")
+        # Note: Le thread du bot (daemon) s'arrêtera automatiquement avec le processus principal.
