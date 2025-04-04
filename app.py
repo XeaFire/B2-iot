@@ -10,6 +10,22 @@ from bot import run_bot
 from Utils.Notifier import notification_queue
 from Utils.ImageManager import save_temp_image
 from config import DEV_MODE
+import mysql.connector
+
+# --- Configuration de la base de données MySQL ---
+db_config = {
+    "host": os.getenv("DATABASE_HOST", "localhost"),
+    "port": os.getenv("DATABASE_PORT", 3306),
+    "user": os.getenv("DATABASE_USER", "root"),
+    "password": os.getenv("DATABASE_PASSWORD", ""),
+    "database": os.getenv("DATABASE_NAME", "mydb"),
+}
+
+try:
+    connection = mysql.connector.connect(**db_config)
+    print("Database connection successful!")
+except mysql.connector.Error as err:
+    print(f"Error: {err}")
 
 # Import pour YOLOv8
 try:
