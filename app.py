@@ -1,4 +1,4 @@
-from flask import Flask, render_template, Response
+from flask import Flask, render_template, Response, jsonify
 import cv2
 import numpy as np
 import time
@@ -10,6 +10,8 @@ from bot import run_bot
 from Utils.Notifier import notification_queue
 from Utils.ImageManager import save_temp_image
 from config import DEV_MODE
+import shutil
+import uuid
 
 # Import pour YOLOv8
 try:
@@ -25,6 +27,16 @@ app = Flask(__name__)
 # --- Variables Globales Partagées et Verrous ---
 last_processed_frame = None
 processed_frame_lock = threading.Lock()
+
+door_button_visible = False
+door_button_hidden_until = 0
+button_state_lock = threading.Lock()
+
+# Log des ouvertures
+LOG_IMAGE_DIR = os.path.join("static", "log_images")
+MAX_LOG_ENTRIES = 100
+door_opening_log = []
+log_lock = threading.Lock()
 
 # Classe singleton pour gérer la caméra
 class CameraManager:
@@ -141,9 +153,9 @@ else:
     print("YOLOv8 n'est pas disponible - la détection ne fonctionnera pas")
 
 # Variables pour la logique de notification
-CONSECUTIVE_DETECTION_THRESHOLD = 7
+CONSECUTIVE_DETECTION_THRESHOLD = 7z
 HUMAN_CONFIDENCE_THRESHOLD = 0.70
-NOTIFICATION_COOLDOWN = 60 # Modifié: 10 -> 60 secondes
+NOTIFICATION_COOLDOWN = 60
 
 consecutive_human_detections = 0
 last_notification_time = 0
@@ -197,7 +209,7 @@ def detect_with_yolov8(frame):
                 if image_path:
                     try:
                         # Mettre un tuple (message, chemin_image) dans la queue
-                        notification_data = ("Alerte : Humain détecté sur la caméra !", image_path)
+                        notification_data = ("Alerte : Humain détecté sur la caméra ! http://192.168.1.183:5000", image_path)
                         notification_queue.put_nowait(notification_data)
                         print(f"Notification (avec image {os.path.basename(image_path)}) mise en file d'attente.")
                         last_notification_time = current_time 
@@ -238,8 +250,8 @@ def detect_with_yolov8(frame):
 
 # --- Thread de Détection en Arrière-plan ---
 def detection_worker():
-    global last_processed_frame
-    print(f"Thread de détection démarré. DEV_MODE: {DEV_MODE}") # Log du mode
+    global last_processed_frame, door_button_visible, door_button_hidden_until
+    print(f"Thread de détection démarré. DEV_MODE: {DEV_MODE}")
     camera_manager = CameraManager.get_instance()
     
     while True:
@@ -249,11 +261,10 @@ def detection_worker():
             time.sleep(0.5)
             continue
             
-        # 2. Exécuter la détection et obtenir la frame potentiellement annotée
-        #    Cette frame annotée sera utilisée pour les notifications Discord.
-        annotated = detect_with_yolov8(frame.copy()) # Travailler sur une copie pour ne pas modifier l'original si DEV_MODE=False
+        # 2. Exécuter la détection
+        annotated = detect_with_yolov8(frame.copy())
         
-        # 3. Mettre à jour la dernière frame traitée pour le flux vidéo web
+        # 3. Mettre à jour la frame pour le flux web selon DEV_MODE
         with processed_frame_lock:
             if DEV_MODE:
                 # En mode DEV, montrer la frame avec les annotations
@@ -261,6 +272,20 @@ def detection_worker():
             else:
                 # Hors mode DEV, montrer la frame originale sans annotations
                 last_processed_frame = frame.copy() 
+            
+        # 4. Logique de visibilité du bouton (après la logique de notification dans detect_with_yolov8)
+        # Accéder à la variable globale (déjà modifiée dans detect_with_yolov8)
+        current_consecutive_detections = consecutive_human_detections
+        
+        with button_state_lock:
+            current_time = time.time()
+            # Rendre visible si seuil atteint ET délai de masquage écoulé
+            if current_consecutive_detections >= CONSECUTIVE_DETECTION_THRESHOLD and current_time >= door_button_hidden_until:
+                if not door_button_visible: # Log seulement si changement d'état
+                    print("Conditions remplies: Rendre le bouton visible.")
+                door_button_visible = True
+            # Note: Le bouton n'est rendu invisible que par l'action de clic via /control/door
+            # ou si le serveur redémarre (initialisé à False).
             
         time.sleep(0.05)
 
@@ -338,14 +363,87 @@ def processed():
 def video_feed():
     return Response(gen_processed_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+# --- Fonctions Utilitaires ---
+def setup_log_dir():
+    """Crée le répertoire pour les images de log s'il n'existe pas."""
+    if not os.path.exists(LOG_IMAGE_DIR):
+        try:
+            os.makedirs(LOG_IMAGE_DIR)
+            print(f"Répertoire de logs '{LOG_IMAGE_DIR}' créé.")
+        except OSError as e:
+            print(f"Erreur lors de la création du répertoire '{LOG_IMAGE_DIR}': {e}")
+
 # Nouvelle route pour le contrôle de la porte
 @app.route('/control/door', methods=['POST'])
 def control_door():
-    # Placeholder: Ici, vous ajouteriez la logique pour envoyer le signal
-    # Par exemple: contrôler un GPIO, appeler une API, etc.
-    print("SIGNAL: Le bouton Ouvrir/Fermer Porte a été pressé !")
-    # Renvoyer une réponse simple pour indiquer le succès
-    return {"status": "success", "message": "Signal porte envoyé (placeholder)"}, 200
+    global door_button_visible, door_button_hidden_until, door_opening_log
+    
+    current_time_for_log = time.time()
+    log_image_filename = None
+    log_image_relative_path = None
+    frame_to_log = None
+    
+    # Essayer de capturer l'image juste avant de cacher le bouton
+    with processed_frame_lock:
+        if last_processed_frame is not None:
+            frame_to_log = last_processed_frame.copy()
+
+    if frame_to_log is not None:
+        setup_log_dir() # S'assurer que le dossier existe
+        try:
+            timestamp_str = time.strftime("%Y%m%d_%H%M%S", time.localtime(current_time_for_log))
+            unique_id = str(uuid.uuid4())[:4]
+            log_image_filename = f"log_{timestamp_str}_{unique_id}.jpg"
+            log_image_full_path = os.path.join(LOG_IMAGE_DIR, log_image_filename)
+            success = cv2.imwrite(log_image_full_path, frame_to_log)
+            if success:
+                log_image_relative_path = os.path.join("log_images", log_image_filename).replace("\\", "/") # Chemin relatif pour URL
+                print(f"Image de log sauvegardée: {log_image_relative_path}")
+            else:
+                print(f"Erreur lors de la sauvegarde de l'image de log: {log_image_full_path}")
+        except Exception as e:
+            print(f"Exception lors de la sauvegarde de l'image de log: {e}")
+
+    # Mettre à jour l'état du bouton et ajouter au log
+    with button_state_lock:
+        door_button_visible = False
+        door_button_hidden_until = current_time_for_log + 60
+        print(f"SIGNAL: Porte contrôlée. Bouton caché jusqu'à {time.strftime('%H:%M:%S', time.localtime(door_button_hidden_until))}")
+
+        # Ajouter au log (même si l'image n'a pas pu être sauvée)
+        with log_lock:
+            log_entry = {
+                "timestamp": current_time_for_log,
+                "image_path": log_image_relative_path # Sera None si erreur
+            }
+            door_opening_log.insert(0, log_entry) # Ajouter au début
+            # Limiter la taille du log
+            if len(door_opening_log) > MAX_LOG_ENTRIES:
+                # Optionnel: Supprimer l'image la plus ancienne si elle existe
+                oldest_entry = door_opening_log.pop() # Enlever la fin
+                # if oldest_entry.get("image_path"):
+                    # old_img_path = os.path.join("static", oldest_entry["image_path"])
+                    # if os.path.exists(old_img_path): 
+                    #    try: os.remove(old_img_path)
+                    #    except OSError as e: print(f"Could not remove old log image {old_img_path}: {e}")
+    
+    # Placeholder: Logique d'envoi de signal réelle ici...
+    
+    return jsonify({"status": "success", "message": "Signal porte envoyé, bouton caché."}), 200
+
+# Nouvelle route pour obtenir l'état du bouton
+@app.route('/button_status')
+def get_button_status():
+    with button_state_lock:
+        # print(f"DEBUG: /button_status requested, visible: {door_button_visible}") # Log de debug si besoin
+        return jsonify({"visible": door_button_visible})
+
+# Nouvelle route pour récupérer les logs
+@app.route('/logs')
+def get_logs():
+    with log_lock:
+        # Renvoyer une copie pour éviter les modifications concurrentes pendant l'itération
+        return jsonify(list(door_opening_log))
 
 if __name__ == '__main__':
     print("Initialisation de l'application...")

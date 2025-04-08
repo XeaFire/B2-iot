@@ -11,39 +11,58 @@
             background-color: #f4f7f6;
             margin: 0;
             padding: 0;
+            color: #333;
+            transition: padding-left 0.3s ease;
+        }
+
+        #main {
+            padding-left: 60px;
+            padding-top: 1px;
+            transition: padding-left 0.3s ease;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .main-content-inner {
             display: flex;
             flex-direction: column;
             align-items: center;
-            min-height: 100vh;
-            color: #333;
+            padding-top: 30px;
+            flex-grow: 1;
         }
+
         .container {
+            width: 90%;
+            max-width: 700px;
             background-color: #ffffff;
             padding: 30px;
             border-radius: 10px;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            margin-top: 30px;
-            width: 90%;
-            max-width: 700px;
             text-align: center;
+            margin-bottom: 30px;
         }
+
         h1 {
             color: #0056b3;
             margin-bottom: 20px;
         }
+
         img#video-stream {
             width: 100%;
-            max-width: 640px; /* Correspond à la largeur de la caméra */
+            max-width: 640px;
             height: auto;
             border: 1px solid #ddd;
             border-radius: 5px;
-            background-color: #eee; /* Fond gris clair si l'image ne charge pas */
+            background-color: #eee;
             display: block;
             margin: 0 auto 25px auto;
         }
+
         .controls {
             margin-top: 20px;
         }
+
         button {
             background-color: #007bff;
             color: white;
@@ -54,82 +73,401 @@
             cursor: pointer;
             transition: background-color 0.3s ease;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            -webkit-tap-highlight-color: transparent;
         }
+
         button:hover {
             background-color: #0056b3;
         }
+
         button:active {
             background-color: #004085;
             transform: translateY(1px);
         }
+
         footer {
-            margin-top: 40px;
+            padding: 20px 0;
+            text-align: center;
             color: #777;
             font-size: 14px;
+            width: 100%;
+            background-color: #e9ecef;
+            margin-top: auto;
         }
+
         .status-message {
             margin-top: 15px;
             font-style: italic;
             color: #555;
-            min-height: 20px; /* Pour éviter les sauts de page */
+            min-height: 20px;
+        }
+
+        button#door-button.hidden {
+            display: none;
+        }
+
+        /* --- Styles Sidebar --- */
+        .sidebar {
+            height: 100%;
+            width: 0;
+            position: fixed;
+            z-index: 1001;
+            /* z-index élevé pour être au dessus */
+            top: 0;
+            left: 0;
+            background-color: #2c3e50;
+            overflow-x: hidden;
+            transition: width 0.3s ease;
+            padding-top: 60px;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .sidebar-content {
+            padding: 15px 25px;
+            text-align: left;
+            color: #ecf0f1;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+
+        .sidebar h2 {
+            color: #ffffff;
+            border-bottom: 1px solid #34495e;
+            padding-bottom: 10px;
+            margin-top: 0;
+            margin-bottom: 20px;
+        }
+
+        .sidebar .closebtn {
+            position: absolute;
+            top: 10px;
+            right: 25px;
+            font-size: 36px;
+            color: #bdc3c7;
+            text-decoration: none;
+            transition: color 0.3s ease;
+            padding: 8px;
+            margin: -8px;
+            -webkit-tap-highlight-color: transparent;
+            cursor: pointer;
+            /* Indiquer qu'il est cliquable */
+        }
+
+        .sidebar .closebtn:hover {
+            color: #ffffff;
+        }
+
+        .openbtn {
+            font-size: 25px;
+            cursor: pointer;
+            background-color: #2c3e50;
+            color: white;
+            padding: 12px 18px;
+            /* Augmenté */
+            border: none;
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            z-index: 1000;
+            /* Juste en dessous du sidebar ouvert */
+            border-radius: 5px;
+            transition: background-color 0.3s ease, left 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .openbtn:hover {
+            background-color: #34495e;
+        }
+
+        #log-entries {
+            max-height: calc(100vh - 180px);
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+
+        #log-entries::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #log-entries::-webkit-scrollbar-track {
+            background: #34495e;
+            border-radius: 4px;
+        }
+
+        #log-entries::-webkit-scrollbar-thumb {
+            background: #5d7a99;
+            border-radius: 4px;
+        }
+
+        #log-entries::-webkit-scrollbar-thumb:hover {
+            background: #718faa;
+        }
+
+        .log-entry {
+            background-color: #34495e;
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+        }
+
+        .log-entry img {
+            width: 80px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 4px;
+            margin-right: 15px;
+            border: 1px solid #4a617a;
+            background-color: #4a617a;
+        }
+
+        .log-entry .timestamp {
+            font-size: 0.9em;
+            color: #bdc3c7;
+        }
+
+        .refresh-button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            margin-bottom: 15px;
+            display: block;
+        }
+
+        .refresh-button:hover {
+            background-color: #2980b9;
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <h1>Surveillance en Direct</h1>
-        
-        <!-- Zone d'affichage du flux vidéo -->
-        <img id="video-stream" src="{{ url_for('video_feed') }}" alt="Flux vidéo en direct">
 
-        <!-- Zone de contrôle -->
-        <div class="controls">
-            <button id="door-button">Ouvrir / Fermer Porte</button>
-            <div id="status-message" class="status-message"></div>
+    <!-- Bouton Sidebar AVEC onclick -->
+    <button class="openbtn" id="openSidebarButton" onclick="openNav()">&#9776;</button>
+
+    <!-- Sidebar -->
+    <div id="mySidebar" class="sidebar">
+        <a href="javascript:void(0)" class="closebtn" onclick="closeNav()">&times;</a>
+        <div class="sidebar-content">
+            <h2>Journal des Ouvertures</h2>
+            <button class="refresh-button" onclick="loadLogs()">Rafraîchir</button>
+            <div id="log-entries">
+                <p>Chargement des logs...</p>
+            </div>
         </div>
-
     </div>
 
-    <footer>
-        Application de Surveillance v1.0
-    </footer>
+    <!-- Contenu Principal -->
+    <div id="main">
+        <div class="main-content-inner">
+            <div class="container">
+                <h1>Surveillance en Direct</h1>
+                <img id="video-stream" src="{{ url_for('video_feed') }}" alt="Flux vidéo en direct">
+                <div class="controls">
+                    <button id="door-button" class="hidden">Ouvrir / Fermer Porte</button>
+                    <div id="status-message" class="status-message"></div>
+                </div>
+            </div>
+            <footer>
+                Application de Surveillance v1.0
+            </footer>
+        </div>
+    </div>
 
     <script>
+        // Références aux éléments DOM
         const doorButton = document.getElementById('door-button');
         const statusMessage = document.getElementById('status-message');
+        const logEntriesContainer = document.getElementById('log-entries');
+        const sidebar = document.getElementById("mySidebar");
+        const mainContent = document.getElementById("main");
+        const openBtn = document.getElementById("openSidebarButton");
+        let buttonStatusInterval;
 
-        doorButton.addEventListener('click', () => {
-            statusMessage.textContent = 'Envoi du signal...';
-            fetch('/control/door', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    console.log('Réponse du serveur:', data);
-                    if (data.status === 'success') {
-                        statusMessage.textContent = 'Signal porte envoyé !';
-                    } else {
-                        statusMessage.textContent = 'Erreur lors de l\'envoi du signal.';
+        // --- Fonctions Sidebar ---
+        function openNav() {
+            console.log("DEBUG: openNav() called"); // Message de débogage
+            // Appliquer les styles pour ouvrir
+            if (sidebar && mainContent && openBtn) {
+                sidebar.style.width = "300px";
+                mainContent.style.paddingLeft = "315px";
+                openBtn.style.left = "315px";
+                loadLogs(); // Charger les logs quand on ouvre
+            } else {
+                console.error("Sidebar, main content, or open button not found in openNav");
+            }
+        }
+
+        function closeNav() {
+            console.log("DEBUG: closeNav() called"); // Message de débogage
+            // Appliquer les styles pour fermer
+            if (sidebar && mainContent && openBtn) {
+                sidebar.style.width = "0";
+                mainContent.style.paddingLeft = "60px";
+                openBtn.style.left = "15px";
+            } else {
+                console.error("Sidebar, main content, or open button not found in closeNav");
+            }
+        }
+
+        // --- Fonction pour charger et afficher les logs ---
+        function loadLogs() {
+            console.log("DEBUG: loadLogs() called"); // Message de débogage
+            if (!logEntriesContainer) {
+                console.error("Log container not found in loadLogs");
+                return;
+            }
+            logEntriesContainer.innerHTML = '<p>Chargement des logs...</p>';
+            fetch('/logs')
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+                    return response.json();
+                })
+                .then(logs => {
+                    logEntriesContainer.innerHTML = ''; // Vider
+                    if (!Array.isArray(logs)) {
+                        console.warn("La réponse de /logs n'est pas un tableau:", logs);
+                        logEntriesContainer.innerHTML = '<p style="color:#e74c3c;">Format de réponse invalide.</p>';
+                        return;
                     }
-                    // Effacer le message après quelques secondes
-                    setTimeout(() => {
-                        statusMessage.textContent = '';
-                    }, 3000);
+                    if (logs.length === 0) {
+                        logEntriesContainer.innerHTML = '<p>Aucune ouverture enregistrée.</p>';
+                        return;
+                    }
+                    logs.forEach(entry => {
+                        const div = document.createElement('div');
+                        div.classList.add('log-entry');
+                        const imageSrc = entry.image_path ? `{{ url_for('static', filename='') }}${entry.image_path}` : '';
+                        const imgHtml = entry.image_path
+                            ? `<img src="${imageSrc}" alt="Log Image" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                               <div style="display:none; width:80px; height:60px; background:#4a617a; margin-right:15px; border-radius:4px; align-items:center; justify-content:center; font-size:0.8em; color:#bdc3c7;">Img Err</div>`
+                            : `<div style="width:80px; height:60px; background:#4a617a; margin-right:15px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:0.8em; color:#bdc3c7;">No Img</div>`;
+
+                        const date = new Date(entry.timestamp * 1000);
+                        const dateOptions = { day: '2-digit', month: '2-digit', year: 'numeric' };
+                        const timeOptions = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+                        let formattedTime;
+                        try {
+                            const datePart = date.toLocaleDateString('fr-FR', dateOptions);
+                            const timePart = date.toLocaleTimeString('fr-FR', timeOptions);
+                            formattedTime = `${datePart} ${timePart}`;
+                        } catch (e) {
+                            console.warn("toLocaleString a échoué, fallback.", e);
+                            formattedTime = date.toISOString();
+                        }
+
+                        div.innerHTML = `
+                            ${imgHtml}
+                            <div class="timestamp">${formattedTime}</div>
+                        `;
+                        logEntriesContainer.appendChild(div);
+                    });
                 })
                 .catch(error => {
-                    console.error('Erreur:', error);
-                    statusMessage.textContent = 'Erreur de communication avec le serveur.';
-                     setTimeout(() => {
-                        statusMessage.textContent = '';
-                    }, 3000);
+                    console.error('Erreur lors du chargement des logs:', error);
+                    logEntriesContainer.innerHTML = '<p style="color:#e74c3c;">Erreur lors du chargement des logs.</p>';
                 });
-        });
+        }
 
-        // Optionnel: Message si le flux vidéo ne charge pas
+        // --- Gestion Bouton Porte ---
+        function checkButtonStatus() {
+            if (!doorButton) return;
+            fetch('/button_status')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (typeof data === 'object' && data !== null && 'visible' in data) {
+                        if (data.visible) {
+                            doorButton.classList.remove('hidden');
+                        } else {
+                            doorButton.classList.add('hidden');
+                        }
+                    } else {
+                        console.warn("Réponse inattendue de /button_status:", data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur lors de la récupération de l\'état du bouton: ', error);
+                });
+        }
+
+        if (doorButton) {
+            doorButton.addEventListener('click', () => {
+                if (!statusMessage) return;
+                statusMessage.textContent = 'Envoi du signal...';
+                doorButton.classList.add('hidden'); // Cacher
+
+                fetch('/control/door', { method: 'POST' })
+                    .then(response => {
+                        if (!response.ok) {
+                            return response.json().catch(() => ({
+                                status: "error",
+                                message: `Erreur HTTP ${response.status}`
+                            })).then(errData => { throw errData; });
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log('Réponse du serveur (door control):', data);
+                        if (data.status === 'success') {
+                            statusMessage.textContent = 'Signal porte envoyé ! Bouton caché temporairement.';
+                            if (sidebar && parseFloat(sidebar.style.width || 0) > 0) {
+                                loadLogs();
+                            }
+                        } else {
+                            statusMessage.textContent = `Erreur: ${data.message || 'Erreur inconnue du serveur.'}`;
+                            checkButtonStatus();
+                        }
+                        setTimeout(() => { if (statusMessage) statusMessage.textContent = ''; }, 4000);
+                    })
+                    .catch(error => {
+                        console.error('Erreur (door control):', error);
+                        statusMessage.textContent = `Erreur: ${error.message || 'Erreur de communication.'}`;
+                        checkButtonStatus();
+                        setTimeout(() => { if (statusMessage) statusMessage.textContent = ''; }, 5000);
+                    });
+            });
+        } else {
+            console.error("Bouton de contrôle de porte non trouvé!");
+        }
+
+        // --- Initialisation & Nettoyage ---
+        // Le code `addEventListener` pour openBtn a été retiré car `onclick` est utilisé dans le HTML
+        if (typeof checkButtonStatus === 'function') {
+            buttonStatusInterval = setInterval(checkButtonStatus, 2000);
+            window.addEventListener('unload', () => {
+                if (buttonStatusInterval) {
+                    clearInterval(buttonStatusInterval);
+                }
+            });
+            checkButtonStatus();
+        }
+
+        // --- Gestion Erreur Vidéo ---
         const videoElement = document.getElementById('video-stream');
-        videoElement.onerror = () => {
-            console.error("Erreur de chargement du flux vidéo.");
-            // Peut-être afficher un message sur la page
-        };
+        if (videoElement) {
+            videoElement.onerror = () => {
+                console.error("Erreur de chargement du flux vidéo.");
+            };
+        } else {
+            console.error("Élément vidéo non trouvé!");
+        }
+
+        // Log pour confirmer que le script principal s'exécute jusqu'à la fin
+        console.log("Script principal initialisé.");
 
     </script>
 </body>
