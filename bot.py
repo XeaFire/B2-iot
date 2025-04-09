@@ -3,7 +3,7 @@ import os
 import asyncio
 from Utils.Notifier import notification_queue, notification_sender_task
 
-DISCORD_TOKEN = "MTM1NzI1ODk1OTc1MjM5NjgyMA.GqAgAy.AWZ_6vDxttH_4T7ZlA0aL1NmGQ3pzNQYfoxPUQ"
+DISCORD_TOKEN = ""
 
 # Définir les intents nécessaires pour le bot
 # Vous devrez peut-être ajuster cela en fonction des besoins de votre bot

@@ -9,12 +9,10 @@ import queue
 from bot import run_bot
 from Utils.Notifier import notification_queue
 from Utils.ImageManager import save_temp_image
-from config import DEV_MODE
-<<<<<<< HEAD
-import shutil
-import uuid
-=======
+from config import DEV_MODE, CAMERA_SOURCE
 import mysql.connector
+import uuid
+import shutil
 
 # --- Configuration de la base de données MySQL ---
 db_config = {
@@ -30,7 +28,6 @@ try:
     print("Database connection successful!")
 except mysql.connector.Error as err:
     print(f"Error: {err}")
->>>>>>> 5614f2d28661b147ac6b8f9378b2ca82b08b54ce
 
 # Import pour YOLOv8
 try:
@@ -81,21 +78,38 @@ class CameraManager:
         print("CameraManager initialisé")
 
     def init_camera(self):
-        print("Initialisation de la caméra...")
+        print(f"Initialisation de la caméra depuis la source: {CAMERA_SOURCE}...")
         
-        camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        camera = None
+        # Choisir le backend en fonction du type de source
+        if isinstance(CAMERA_SOURCE, int):
+            print("Source locale détectée (entier), utilisation de CAP_DSHOW.")
+            camera = cv2.VideoCapture(CAMERA_SOURCE, cv2.CAP_DSHOW)
+        elif isinstance(CAMERA_SOURCE, str):
+            print("Source réseau/fichier détectée (chaîne), backend automatique.")
+            camera = cv2.VideoCapture(CAMERA_SOURCE)
+        else:
+            print(f"ERREUR: Type de CAMERA_SOURCE non supporté: {type(CAMERA_SOURCE)}")
+            return # Ne pas continuer si la source n'est pas valide
+
+        # Vérifier si l'ouverture a réussi
         if camera is not None and camera.isOpened():
-            # Configuration de la caméra
-            camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            camera.set(cv2.CAP_PROP_FPS, 30)
-            print(f"Caméra ouverte avec succès")
+            # Configuration de la caméra (optionnel, peut échouer sur les flux réseau)
+            try:
+                 camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                 camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                 camera.set(cv2.CAP_PROP_FPS, 30)
+                 print("Configuration dimensions/FPS tentée.")
+            except Exception as e:
+                 print(f"Note: Impossible de définir les propriétés de la caméra (normal pour certains flux): {e}")
+            
+            print(f"Caméra/Flux ouvert avec succès depuis {CAMERA_SOURCE}")
             self.camera = camera
-            # Lire quelques frames pour stabiliser la caméra
+            # Lire quelques frames pour stabiliser
             for _ in range(5):
                 ret, _ = self.camera.read()
         else:
-            print("Échec d'ouverture de la caméra")
+            print(f"Échec d'ouverture de la caméra/flux depuis {CAMERA_SOURCE}")
             self.camera = None
     
     def update(self):
@@ -172,7 +186,7 @@ else:
     print("YOLOv8 n'est pas disponible - la détection ne fonctionnera pas")
 
 # Variables pour la logique de notification
-CONSECUTIVE_DETECTION_THRESHOLD = 7z
+CONSECUTIVE_DETECTION_THRESHOLD = 7
 HUMAN_CONFIDENCE_THRESHOLD = 0.70
 NOTIFICATION_COOLDOWN = 60
 
