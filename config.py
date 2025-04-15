@@ -9,4 +9,4 @@ DEV_MODE = True  # Mettez à False pour la production/démonstration
 # Mettre un entier (ex: 0, 1) pour une caméra locale connectée au PC.
 # Mettre une URL (chaîne de caractères, ex: 'http://192.168.1.10:8080/video') 
 # pour un flux vidéo réseau (IP Camera, autre PC, etc.).
-CAMERA_SOURCE = 0 # 0 pour la webcam par défaut s
+CAMERA_SOURCE = 0 # 0 pour la webcam par défaut sur le PC

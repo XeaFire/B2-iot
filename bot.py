@@ -30,10 +30,6 @@ async def on_message(message):
     if message.author == client.user:
         return
 
-    # Commande simple pour tester
-    if message.content.startswith('!hello'):
-        await message.channel.send('Hello!')
-
 def run_bot():
     """Fonction pour démarrer le bot."""
     if not DISCORD_TOKEN:
